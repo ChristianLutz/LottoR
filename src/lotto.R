@@ -1,25 +1,12 @@
 #
 #
 # @author: Christian Lutz
-# @version: 0.2.0
 #
-# Beschreibung:
-#
-#
-#
+# Description: This is nonsense and just for me playing around with R
+#              If you ever think it is possible to calc the next lotto numbers take a statistic course :)
 #
 
-subs <- function(x,y) {
-	for( i in y ) {
-		if( any(x==i) ) {
-			
-		}
-		else {
-			return(0);
-		}
-	}
-	return(1);
-}
+
 
 # Fakultät berechnen.
 fak <- function(n) {
@@ -77,39 +64,283 @@ nokIdxMatrix <- function(x,y) {
 }
 
 
+
 #
-# x = index vector
-# y = component vector
+# data = each row of the matrix is already sorted
+# baseNumbers = vector with all Numbers within the matrix
+# comboNo = Länge der zu suchenden Kombinationen
 #
-# take each element of the index vector and concatenate a return vector with the
-# component at the giben index
+# Diese Funktion berechnet alle wie häufig eine Kombination mit einer bestimmten Anzahl
+# an Elementen in der Matrix vorkommen. Dabei wird Zeile für Zeile jede Kombination
+# geprüft.
 #
-mapIdxToVector <- function(x,y) {
-	ret <- c(x);
-	for( i in 1:length(x) ) {
-		ret[i] <- y[x[i]];
+calcNoOfCombinations <- function( data, baseNumbers, combNo ) {
+
+	hashIdx <- nokIdxMatrix( baseNumbers, combNo);
+	mappedV <- t(apply(hashIdx, 1, function(x,y) y[x], baseNumbers)); # alle möglichen comboNo Kombinationen
+	#prepare hash()
+	#Option1: hash <- list();
+	#         length(hash) <- nrow(mappedV);
+	#Option2: hash <- vector(mode="list", nrow(mappedV) );
+	#Option3: hash <- new.env(hash=TRUE) - very fast hash
+	hash <- new.env(hash=TRUE)
+	for( i in 1:nrow(mappedV) ) {
+		hash[[paste(mappedV[i,], collapse = '.')]] <- 0; # Wert initialisieren
 	}
-	return(ret);
+	
+	# Index matrix für jede Ziehung, damit sind die Indizes für alle 35 Kombinationen abgelegt.
+	indexMX <- nokIdxMatrix( c(1:ncol(data)),combNo); #Columns: x1, x2, x3, x4, Anzahl der Matches
+	
+	# suche und zähle jede Kombination
+	for( i in 1:nrow(data) ) {
+		for ( j in 1:nrow(indexMX) ) {
+			fi <- paste(data[i,indexMX[j,]], collapse = '.')
+			hash[[fi]] <- hash[[fi]] + 1;
+		}
+	}
+	
+	mappedV <- cbind( mappedV, matrix(0,nrow(mappedV),1) ); #Zusätzliche Spalte für die Anzahl der Matches
+	for( i in 1:nrow(mappedV) ) {
+		mappedV[i,(combNo+1)] <- hash[[paste(mappedV[i,1:combNo], collapse = '.')]];
+	}
+	
+	mappedV <- mappedV[order(mappedV[,(combNo+1)], na.last=TRUE, decreasing=TRUE),];
+	return( mappedV );
 }
+
+
+
+#
+# data = each row of the matrix is already sorted
+# baseNumbers = vector with all Numbers within the matrix
+#
+# Calculate the average number of 'Ziehungen' until the same number appears
+#
+avgDistanceForEachNumber <- function(data, lottoNrs) {
+
+	distances <- c();
+
+	for( i in lottoNrs ) {
+		foundNoX <- apply(data, 1, function(x) any(x==i));
+		lastFoundIdx <- c();
+		for( j in 1:length(foundNoX)) {
+			if( foundNoX[j] ) {
+				if( is.null(lastFoundIdx) ) {
+					lastFoundIdx <- c(j);
+				}
+				else {
+					distances <- c(distances, j - lastFoundIdx[1]);
+					lastFoundIdx <- c(j);
+				}
+			}
+		}
+	}
+	
+	
+	# Verteilung, wie haeufig kam eine bestimmte Distanz vor.
+	#print('Berechne Distanz Verteilung ...')
+	#distribution <- table(distances);
+	#print(distribution);
+	#barplot(distribution)
+	
+	# Durchschnitt
+	print('Durchschnittliche Distanz ...')
+	avg <- sum(distances) / length(distances);
+	print(avg);
+	
+	# Anzahl Distanzen
+	# print("Anzahl Distanzen ...")
+	# print(length(distances));
+	
+	return(avg);
+}
+
+
+#
+# Berechne die Häufigkeit und die Verteilung von 10 Kombinationen größer drei
+# Bsp.: 13,17,18 oder 42,45,49
+#
+#
+findDecimalCombination <- function(data) {
+	
+}
+
+
+#
+#
+# prüft ob ein vector bereits als Zeile in einem bestehenden Datensatz vorkommt.
+# stimmen die Anzahl der Spalten und die Länge des Vectors nicht überein wird
+# immer FALSE zurück geliefert.
+#
+# return TRUE oder FALSE
+isDuplicate <- function(orgData, newNumbers) {
+
+	sortedNewNumbers <- sort(newNumbers)
+	if( ncol(orgData) == length(newNumbers) ) {
+		
+		tmpData <- unique(orgData);
+		tmpData <- rbind(tmpData,sortedNewNumbers);		
+		return(anyDuplicated(tmpData) > 0);
+	}
+	
+	return(FALSE);
+}
+
+#
+# wann wurden welche Lotte Zahlen zum letzten Mal gespielt
+# Für jede Lottozahl gibt es eine Nummer welche an gibt, wie viele Ziehungen es
+# her ist das diese Nummer gezogen wurde.
+#
+lastTimeNumbersPlayed <- function(orgData) {
+
+	lastPlayed <- matrix(0,1,49);
+	idx <- 0;
+	for (rowNo in nrow(orgData):1) {
+		idx <- idx + 1
+		for (colmnNo in 1:6) {
+			currentNumber <- orgData[rowNo, colmnNo]
+			if (lastPlayed[1,currentNumber] == 0) {
+				lastPlayed[1,currentNumber] <- idx;
+			} 
+		}
+	}
+	
+	return(lastPlayed)
+}
+
+#
+# berechne eine neue Wahrscheinlichkeitsverteilung basierende auf den letzten Ziehungen
+# diese Verteilung ist humbug und soll nur zum Spass ausprobiert werden.
+# Die zu erwartenden Gewinne dürfen nicht höher sein als die durch gleichmäßige Zufallszahlen.
+#
+calculateProbabilityDistribution <- function(orgData) {
+
+	lowestPossibleProbability <- 30;
+	avgDistance <- avgDistanceForEachNumber(orgData, c(1:49));
+	
+	probability <- matrix(49,1,49);
+	numbersPlayed <- lastTimeNumbersPlayed(orgData);
+	numbersPlayed <- apply(numbersPlayed, c(1,2), function(x) if(x < avgDistance) 49 else 49 - (x / 3));
+	
+	return(apply(numbersPlayed, c(1,2), function(x) 1/x));
+}
+
+isNumberAlreadyUsed <- function(currentNumbers, newNumber) {
+	if (nrow(currentNumbers)==0) {
+		return(FALSE);
+	}
+	if (is.na(any(match(newNumber, currentNumbers)))) {
+		return(FALSE);
+	}
+	return(TRUE);
+}
+
+findNextNumbers <- function(orgData, amountOfNewNumber, avgNumberDistanz) {
+
+	newNumbers <- matrix(,0,6);
+	newProbability <- calculateProbabilityDistribution(orgData);
+	hist(sample(1:49,1000000,replace=T, prob=newProbability))
+	
+	while (nrow(newNumbers) != amountOfNewNumber) {
+		randomNumbers <- sample(1:49,6,replace=F, prob=newProbability);
+		if (! isDuplicate(orgData, randomNumbers)) {
+			if (! isNumberAlreadyUsed(newNumbers, randomNumbers)) {
+				newNumbers <- rbind(newNumbers, randomNumbers);
+			}
+		} 
+	}
+	
+	newNumbers <- t(apply(newNumbers,1,sort));
+	return(newNumbers);
+}
+
+
+zweidreivier <- function() {
+	#
+	# haeufigste Zweierkombination ( 1128 Moeglichkeiten )
+	#
+	print('-------------------------------------------------------------------');
+	print('Berechne haeufigsten zweier Kombinationen ...')
+	
+	a <- Sys.time()
+	zweierKombination <- calcNoOfCombinations( data, lottoNrs, 2 )
+	b <- Sys.time();
+	print(difftime(b,a));
+	
+	print( zweierKombination[1,])
+	print( zweierKombination[2,])
+	print( zweierKombination[3,])
+	
+	
+	#
+	# haeufigste Dreierkombination ( 18424 Moeglichkeiten )
+	#
+	print('-------------------------------------------------------------------');
+	print('Berechne haeufigsten dreier Kombinationen ...')
+	
+	a <- Sys.time()
+	dreierKombination <- calcNoOfCombinations( data, lottoNrs, 3 )
+	b <- Sys.time();
+	print(difftime(b,a));
+	
+	print( dreierKombination[1,])
+	print( dreierKombination[2,])
+	print( dreierKombination[3,])
+	
+	
+	
+	#
+	# haeufigste Viererkombination ( 211876 Moeglichkeiten )
+	#
+	print('-------------------------------------------------------------------');
+	print('Berechne haeufigsten vierer Kombinationen ...')
+
+	a <- Sys.time()
+	viererKombination <- calcNoOfCombinations( data, lottoNrs, 4 )
+	b <- Sys.time();
+	print(difftime(b,a));
+	
+	print( viererKombination[1,])
+	print( viererKombination[2,])
+	print( viererKombination[3,])
+	
+	
+	#
+	# haeufigste Fünferkombination ( xx Moeglichkeiten )
+	#
+	print('-------------------------------------------------------------------');
+	print('Berechne haeufigsten fünfer Kombinationen ...')
+
+	a <- Sys.time()
+	fuenferKombination <- calcNoOfCombinations( data, lottoNrs, 5 )
+	b <- Sys.time();
+	print(difftime(b,a));
+	
+	print( fuenferKombination[1,])
+	print( fuenferKombination[2,])
+	print( fuenferKombination[3,])
+}
+
 
 
 lotto <- function() {
 	
-	pfadUndDateiName <- "/Users/christian/Documents/Workspace/Scripte/LottoS/lottozahlen2009.txt"
-	dataset <- read.csv(pfadUndDateiName, TRUE, sep=",", quote="");	zahlen <- c(1:49);
+	pfadUndDateiName <- "/Users/christian/Documents/Workspace/Scripte/LottoS/lottozahlen.csv"
+	importedData <- read.csv(pfadUndDateiName, TRUE, sep=";", quote="");	
+	zahlen <- c(1:49);
 	
 	#
 	#### PREPROCESSING ########
 	
-	# entferne Datum
-	dataset <- subset(dataset, select=c(2:8));
+	# entferne Datum, Zusatzzahl und Superzahl
+	dataset <- subset(importedData, select=c(2:7));
 	# zu einer Matrix konvertieren
 	dataset <- data.matrix(dataset); 
 	# die ersten sechs zahlen sortieren 
-	data <- apply(dataset[,1:6],1,sort);
-	dataset <- cbind( t(data), dataset[,7] );
+	data <- t(apply(dataset,1,sort));
+	# dataset <- cbind( data, dataset[,7] ); # füge Zusatzzahl dazu, gibt es aktuell nicht mehr, es gibt nur noch eine Zusatzzahl.
 	# sortiere Reihenfolge einer jeder Zeile, wichtig für das hashen bei den Kombinationen
-	sortedDataSet <- t(apply(dataset,1,sort));
+	data <- t(apply(data,1,sort));
 	# lottoNr
 	lottoNrs <- c(1:49);
 	
@@ -122,20 +353,19 @@ lotto <- function() {
 	#
 	
 	print('Anzahl Ziehungen: ')
-	print(length(dataset[,1]))
+	print(nrow(data))
 	print('')
 	
 	#
 	# berechne Verteilung der einzelner Kugeln
 	#
-	
 	print('Berechne Verteilung ...')
-
 	verteilung <- vector('integer',49);
 	for ( i in lottoNrs ) {
-		verteilung[i] <- length( which( dataset==i ));
+		verteilung[i] <- length( which( data==i ));
 	}
-#	barplot(verteilung)
+	print(verteilung);
+	barplot(verteilung)
 	
 	
 	#	
@@ -144,208 +374,70 @@ lotto <- function() {
 	
 	print('Berechne Distanz ...')
 	
-	dif <- vector('integer', length(dataset[,1]) );
-	for ( i in 1:length(dataset[,1]) ) {
-		dif[i] <- max(dataset[i,1:6]) - min(dataset[i,1:6]);
+	dif <- vector('integer', nrow(data) );
+	for ( i in 1:nrow(data) ) {
+		dif[i] <- max(data[i,]) - min(data[i,]);
 	}
 	
 	print(max(dif));				# maximale Distanz
 	print(min(dif));				# minimale Distanz
 	print(sum(dif) / length(dif)); 	# mean Distanz
-#	boxplot(dif)					# Box Plot Grafik mit Median etc.
+	#boxplot(dif)					# Box Plot Grafik mit Median etc.
 	
 	
 	
 	#
 	# Kombinationen die bereits mehrmals gezogen wurden
 	#
-	
-	print('Berechne doppelte Kombinationen ...')
-	
-	print( dataset[duplicated(dataset),] );
-	
+	print('-------------------------------------------------------------------');
+	print('Berechne doppelte Kombinationen ...');
+	print('- ohne Zusatzzahl und Superzahl');
+	print( data[duplicated(data),] );
 	
 	
 	#
 	# Haeufigste Superzahl
 	#
-	
-	print('Berechne Superzahlverteilung ...');
-	numSZ <- table( dataset[,7] ); # beinhaltet für jede Zahl wie oft diese als Superzahl gezogen wurde.
+	#print('Berechne Zusatzzahl Verteilung ...');
+	#numSZ <- table( dataset[,7] ); # beinhaltet für jede Zahl wie oft diese als Superzahl gezogen wurde.
 									# dabei entspricht der Index der entsprechenden Kugel
-	print.table( numSZ );
+	#print.table( numSZ );
 	
-	
-	
-	#
-	# haeufigste Zweierkombination ( 1128 Moeglichkeiten )
-	#
-	
-	print('-------------------------------------------------------------------');
-	print('Berechne haeufigsten zweier Kombinationen ...')
-	
-	a <- Sys.time();
-	nrKombinationen <- 21;	#Anzahl Kombinationen, bei 2 aus 7
-	kombination <- matrix(0,1176,3); 	#Columns: x1, x2, Anzahl der Matches
-	index <- 1;
-	for ( i in 1:49 ) {
-		j <- i+1;
-		while ( j < 50 ) {
-			kombination[index,1] <- i;
-			kombination[index,2] <- j;
-			index <- index + 1;
-			j <- j + 1;
-		}	
-	}
-	
-	b <- Sys.time();
-	print(difftime(b,a));
-	
-	for ( j in 1:length(kombination[,1]) ) {
-		kombination[j,3] <- sum(apply(dataset, 1, subs, kombination[j,1:2] ));
-	}
-	
-	c <- Sys.time();
-	print(difftime(c,b));
-
-	kombination <- kombination[order(kombination[,3], na.last=TRUE, decreasing=TRUE),];
-	print( kombination[1,])
-	print( kombination[2,])
-	print( kombination[3,])
-	
-	
-
-	#
-	# haeufigste Dreierkombination ( 18424 Moeglichkeiten )
-	#
-	
-	print('-------------------------------------------------------------------');
-	print('Berechne haeufigsten dreier Kombinationen ...')
-	
-	
-
-	a <- Sys.time()
-	nrKombinationen <- 35; 				#Anzahl Kombination die es bei 3 aus 7 geben kann
-	hash <- list();
-
-	
-	for ( i in 1:49 ) {
-		j <- i+1;
-		while ( j < 50 ) {
-			k <- j+1;
-			while( k < 50 ) {
-				hash[[paste(c(i,j,k), collapse = '.')]] <- 0;
-				k <- k + 1;
-			}
-			j <- j + 1;
-		}	
-	}
-	indexMX <- matrix(0,35,3); 	#Columns: x1, x2, x3, Anzahl der Matches
-	index <- 1;
-	for ( i in 1:7 ) {
-		j <- i+1;
-		while ( j < 8 ) {
-			k <- j+1;
-			while( k < 8 ) {
-				indexMX[index,1] <- i;
-				indexMX[index,2] <- j;
-				indexMX[index,3] <- k;
-				index <- index + 1;
-				k <- k + 1;
-			}
-			j <- j + 1;
-		}	
-	}
-#	print(indexMX);
-	
-	
-	b <- Sys.time();
-	print(difftime(b,a));
-	
-	# suche und zähle jede Kombination
-	for( i in 1:nrow(dataset) ) {
-		for ( j in 1:nrow(indexMX) ) {
-			fi <- c(sortedDataSet[i, indexMX[j,1]], sortedDataSet[i, indexMX[j,2]], sortedDataSet[i, indexMX[j,3]]);
-			hash[[paste(fi, collapse = '.')]] <- hash[[paste(fi, collapse = '.')]] + 1;
-		}
-	}
-	
-	c <- Sys.time();
-	print(difftime(c,b));
-	
-	kombination <- matrix(0,18424,4); 	#Columns: x1, x2, x3, Anzahl der Matches
-	index <- 1;
-	for ( i in 1:49 ) {
-		j <- i+1;
-		while ( j < 50 ) {
-			k <- j+1;
-			while( k < 50 ) {
-				kombination[index,1] <- i;
-				kombination[index,2] <- j;
-				kombination[index,3] <- k;
-				kombination[index,4] <- hash[[paste(c(i,j,k), collapse = '.')]];
-				index <- index + 1;
-				k <- k + 1;
-			}
-			j <- j + 1;
-		}	
-	}
-	kombination <- kombination[order(kombination[,4], na.last=TRUE, decreasing=TRUE),];
-	print( kombination[1,])
-	print( kombination[2,])
-	print( kombination[3,])
-	
-	
-	
-	#
-	# haeufigste Viererkombination ( 211876 Moeglichkeiten )
-	#
-	
-	print('-------------------------------------------------------------------');
-	print('Berechne haeufigsten vierer Kombinationen ...')
-
-	a <- Sys.time();
-	
-	#prepare hash()
-	hash <- list();
-	
-	hashIdx <- nokIdxMatrix( lottoNrs, 4);
-	mappedV <- t(apply(hashIdx, 1, mapIdxToVector, lottoNrs)); # alle 211876 möglichen vierer Kombinationen
-	for( i in 1:nrow(mappedV) ) {
-		hash[[paste(mappedV[i,], collapse = '.')]] <- 0; # Wert initialisieren
-	}
-	
-	# Index matrix für jede Ziehung, damit sind die Indizes für alle 35 Kombinationen abgelegt.
-	indexMX <- nokIdxMatrix( c(1:7),4); #Columns: x1, x2, x3, x4, Anzahl der Matches
-	
-	b <- Sys.time();
-	print(difftime(b,a));
-	
-	# suche und zähle jede Kombination
-	for( i in 1:nrow(sortedDataSet) ) {
-		mappedZiehung <- t(apply(indexMX, 1, mapIdxToVector, sortedDataSet[i,]));
-		for ( j in 1:nrow(mappedZiehung) ) {
-			hash[[paste(mappedZiehung[j,], collapse = '.')]] <- hash[[paste(mappedZiehung[j,], collapse = '.')]] + 1;
-		}
-	}
-	
-	mappedV <- cbind( mappedV, matrix(0,nrow(mappedV),1) ); #Zusätzliche Spalte für die Anzahl der Matches
-	for( i in 1:nrow(mappedV) ) {
-		mappedV[i,5] <- hash[[paste(mappedV[i,1:4], collapse = '.')]];
-	}
-	
-	c <- Sys.time();
-	print(difftime(c,b));
-	
-	mappedV <- mappedV[order(mappedV[,5], na.last=TRUE, decreasing=TRUE),];
-	print( mappedV[1,]);
-	print( mappedV[2,]);
-	print( mappedV[3,]);
-
 	
 	#
 	# Berechne durchschnittlicher Abstand bis eine Zahl in der nächsten Ziehung wieder gelost wird.
 	#
+	#print('-------------------------------------------------------------------');
+	#print('Berechne abstand zwischen den Ziehungen ...')
+	#avgNumberDistance <- avgDistanceForEachNumber(data, lottoNrs);
 	
 	
+	#
+	# Berechne die Häufigkeit und die Verteilung von 10 Kombinationen größer drei
+	# Bsp.: 13,17,18 oder 42,45,49
+	#
+	# TODO
+	
+	
+	# 
+	# Wann wurden die nummer das letzte Mal gezogen
+	print('-------------------------------------------------------------------');
+	print('Wann wurden die Zahlen zu letzt gezogen ...')
+	print(lastTimeNumbersPlayed(data));
+	
+	
+	#
+	# Berechne die nächsten Lottozahlen :))))
+	#
+	# Beachte:
+	#   - Durchschnittliche Distanz
+	#	- Dauer bis eine Zahl wieder gezogen wurde
+	#   - Roland meine es gibt immer eine Zehner Kombi 21,23,29 oder 13,15,16
+	# 	- Zahl darf noch nie gezogen worden sein.
+	#	- Die letzten Ziehungen berücksichtigen.
+	#	- Als Parameter die nächsten X-Zahlen die alle Kriterien entsprechen.
+	print('-------------------------------------------------------------------');
+	print('Berechne neue zufällige Lottozahlen ...')
+	newNumbers <- findNextNumbers(data, 6, 0.0)
+	print(newNumbers)
 }
